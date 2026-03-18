@@ -10,7 +10,7 @@ def generate_cards(text: str) -> list:
     if text.startswith("IMAGE:"):
         encoded = text.replace("IMAGE:", "")
         message = client.messages.create(
-            model="claude-opus-4-6",
+            model="claude-opus-4-5",
             max_tokens=1024,
             messages=[
                 {
@@ -34,7 +34,7 @@ def generate_cards(text: str) -> list:
         )
     else:
         message = client.messages.create(
-            model="claude-opus-4-6",
+            model="claude-opus-4-5",
             max_tokens=1024,
             messages=[
                 {
