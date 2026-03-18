@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useEffect, useState, useRef } from "react";
 import {
   View,
@@ -16,7 +17,15 @@ const TILT_THRESHOLD = 0.6;
 export default function GameScreen() {
   const { cards: cardsParam } = useLocalSearchParams();
   const router = useRouter();
-  const cards = JSON.parse(cardsParam as string);
+  const cards = cardsParam ? JSON.parse(cardsParam as string) : [];
+
+  useEffect(() => {
+    if (!cards.length) {
+      router.replace("/");
+    }
+  }, []);
+
+  if (!cards.length) return null;
 
   const [index, setIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(TIMER_DURATION);
@@ -52,14 +61,13 @@ export default function GameScreen() {
       }
     });
     return () => sub.remove();
-  }, []); // Removed dependencies to prevent re-subscription
+  }, []);
 
   function handleAction(action: "correct" | "pass") {
     tiltLockedRef.current = true;
     setTiltLocked(true);
     setFeedback(action);
 
-    // Calculate new values immediately to avoid stale state in navigation
     const newScore = action === "correct" ? score + 1 : score;
     const newMissed = action === "pass" ? [...missed, cards[index].term] : missed;
 
