@@ -117,7 +117,7 @@ export default function GameScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  default: { backgroundColor: "#6C63FF" },
+  default: { backgroundColor: "#6c65fd" },// change to a more neutral color
   green: { backgroundColor: "#2ecc71" },
   red: { backgroundColor: "#e74c3c" },
   timer: { position: "absolute", top: 60, fontSize: 24, color: "#fff", fontWeight: "bold" },
