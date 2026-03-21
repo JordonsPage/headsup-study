@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 
 const API_URL = "http://137.99.168.249:8000";
 
@@ -20,6 +22,47 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [setName, setSetName] = useState("");
   const router = useRouter();
+
+  async function handleUpload(formData: FormData) {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/upload`, { method: "POST", body: formData });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = await res.json();
+      setCards(data.cards);
+    } catch (e) {
+      Alert.alert("Upload Error", String(e));
+    }
+    setLoading(false);
+  }
+
+  async function handlePDFUpload() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const file = result.assets[0];
+      const formData = new FormData();
+      formData.append("file", { uri: file.uri, name: file.name, type: "application/pdf" } as any);
+      await handleUpload(formData);
+    } catch (e) {
+      Alert.alert("Error", String(e));
+    }
+  }
+
+  async function handleImageUpload() {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") { Alert.alert("Permission needed", "Allow photo library access to upload images."); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      const formData = new FormData();
+      formData.append("file", { uri: asset.uri, name: "image.jpg", type: asset.mimeType || "image/jpeg" } as any);
+      await handleUpload(formData);
+    } catch (e) {
+      Alert.alert("Error", String(e));
+    }
+  }
 
   async function handleManual() {
     if (!text.trim()) {
@@ -80,21 +123,21 @@ export default function HomeScreen() {
           style={styles.quickBtn}
           onPress={() => router.push("/my-sets" as any)}
         >
-          <Text style={styles.quickBtnIcon}>📚</Text>
+          <Text style={styles.quickBtnIcon}></Text>
           <Text style={styles.quickBtnText}>My Sets</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickBtn}
           onPress={() => router.push("/settings" as any)}
         >
-          <Text style={styles.quickBtnIcon}>⚙️</Text>
+          <Text style={styles.quickBtnIcon}></Text>
           <Text style={styles.quickBtnText}>Settings</Text>
         </TouchableOpacity>
       </View>
 
       {/* Input */}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>✨ Create Flashcards</Text>
+        <Text style={styles.sectionTitle}>Create Flashcards</Text>
         <Text style={styles.sectionSubtitle}>
           Type or paste your vocab terms and our AI will generate cards
         </Text>
@@ -116,6 +159,21 @@ export default function HomeScreen() {
             <Text style={styles.buttonText}>Generate Flashcards</Text>
           )}
         </TouchableOpacity>
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or upload a file</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <View style={styles.uploadRow}>
+          <TouchableOpacity style={[styles.uploadBtn, loading && styles.buttonDisabled]} onPress={handlePDFUpload} disabled={loading}>
+            <Text style={styles.uploadBtnText}>📄 PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.uploadBtn, loading && styles.buttonDisabled]} onPress={handleImageUpload} disabled={loading}>
+            <Text style={styles.uploadBtnText}>🖼️ Image</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Generated Cards */}
@@ -209,6 +267,13 @@ const styles = StyleSheet.create({
   nameInput: { flex: 1, borderWidth: 1, borderColor: "#ddd", borderRadius: 10, padding: 10, fontSize: 14 },
   saveBtn: { backgroundColor: "#6C63FF", paddingHorizontal: 16, borderRadius: 10, justifyContent: "center" },
   saveBtnText: { color: "#fff", fontWeight: "bold" },
+
+  dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 14 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#e0e0e0" },
+  dividerText: { marginHorizontal: 10, fontSize: 12, color: "#aaa" },
+  uploadRow: { flexDirection: "row", gap: 10 },
+  uploadBtn: { flex: 1, borderWidth: 1.5, borderColor: "#6C63FF", borderRadius: 10, padding: 12, alignItems: "center" },
+  uploadBtnText: { color: "#6C63FF", fontWeight: "600", fontSize: 15 },
 
   flashCard: { backgroundColor: "#f0eeff", padding: 14, borderRadius: 10, marginBottom: 10 },
   term: { fontSize: 16, fontWeight: "bold", color: "#6C63FF" },
