@@ -15,15 +15,43 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 
 const API_URL = "http://137.99.168.249:8000";
+type InputMode = "type" | "pdf" | "image";
 
 export default function HomeScreen() {
+  const [mode, setMode] = useState<InputMode>("type");
   const [text, setText] = useState("");
-  const [cards, setCards] = useState<any[]>([]);
+  const [cards, setCards] = useState<{ term: string; definition: string }[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Generating...");
   const [setName, setSetName] = useState("");
   const router = useRouter();
 
-  async function handleUpload(formData: FormData) {
+  // ── API helpers ────────────────────────────────────────────────────────────
+
+  async function generateFromText() {
+    if (!text.trim()) {
+      Alert.alert("Empty", "Paste or type your notes first.");
+      return;
+    }
+    setLoadingLabel("Generating cards...");
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/manual`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = await res.json();
+      setCards(data.cards);
+    } catch (e) {
+      Alert.alert("Error", String(e));
+    }
+    setLoading(false);
+  }
+
+  async function generateFromFile(formData: FormData, label: string) {
+    setLoadingLabel(label);
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/upload`, { method: "POST", body: formData });
@@ -36,202 +64,223 @@ export default function HomeScreen() {
     setLoading(false);
   }
 
-  async function handlePDFUpload() {
+  async function pickPDF() {
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/pdf",
+        copyToCacheDirectory: true,
+      });
       if (result.canceled) return;
       const file = result.assets[0];
       const formData = new FormData();
       formData.append("file", { uri: file.uri, name: file.name, type: "application/pdf" } as any);
-      await handleUpload(formData);
+      await generateFromFile(formData, `Reading "${file.name}"...`);
     } catch (e) {
       Alert.alert("Error", String(e));
     }
   }
 
-  async function handleImageUpload() {
+  async function pickImage() {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") { Alert.alert("Permission needed", "Allow photo library access to upload images."); return; }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 });
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Allow photo library access to upload images.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.85,
+      });
       if (result.canceled) return;
       const asset = result.assets[0];
       const formData = new FormData();
-      formData.append("file", { uri: asset.uri, name: "image.jpg", type: asset.mimeType || "image/jpeg" } as any);
-      await handleUpload(formData);
+      formData.append("file", {
+        uri: asset.uri,
+        name: "image.jpg",
+        type: asset.mimeType || "image/jpeg",
+      } as any);
+      await generateFromFile(formData, "Reading image...");
     } catch (e) {
       Alert.alert("Error", String(e));
     }
   }
 
-  async function handleManual() {
-    if (!text.trim()) {
-      Alert.alert("Empty!", "Type some vocab terms first.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/manual`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json();
-      setCards(data.cards);
-    } catch (e) {
-      Alert.alert("Error", String(e));
-    }
-    setLoading(false);
-  }
-
-  async function handleSaveSet() {
-    if (!setName.trim()) {
-      Alert.alert("Name required", "Enter a name for this card set.");
-      return;
-    }
-    if (cards.length === 0) {
-      Alert.alert("No cards", "Generate some cards first.");
-      return;
-    }
+  async function saveSet() {
+    if (!setName.trim()) { Alert.alert("Name required", "Give this set a name."); return; }
+    if (!cards.length) { Alert.alert("No cards", "Generate cards first."); return; }
     try {
       const existing = await AsyncStorage.getItem("card_sets");
       const sets = existing ? JSON.parse(existing) : [];
-      const newSet = {
-        id: Date.now().toString(),
-        name: setName.trim(),
-        cards,
-        createdAt: Date.now(),
-      };
-      sets.push(newSet);
+      sets.push({ id: Date.now().toString(), name: setName.trim(), cards, createdAt: Date.now() });
       await AsyncStorage.setItem("card_sets", JSON.stringify(sets));
       Alert.alert("Saved!", `"${setName}" saved with ${cards.length} cards.`);
       setSetName("");
-    } catch (e) {
-      Alert.alert("Error", "Could not save card set.");
+    } catch {
+      Alert.alert("Error", "Could not save.");
     }
   }
 
+  // ── Generate button logic ──────────────────────────────────────────────────
+
+  function handleGenerate() {
+    if (mode === "type") generateFromText();
+    else if (mode === "pdf") pickPDF();
+    else pickImage();
+  }
+
+  // ── UI ────────────────────────────────────────────────────────────────────
+
+  const MODES: { key: InputMode; label: string; icon: string }[] = [
+    { key: "type", label: "Type", icon: "✏️" },
+    { key: "pdf", label: "PDF", icon: "📄" },
+    { key: "image", label: "Image", icon: "🖼️" },
+  ];
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       {/* Header */}
       <Text style={styles.title}>Heads Up Study</Text>
-      <Text style={styles.subtitle}>Turn your notes into flashcards</Text>
+      <Text style={styles.subtitle}>AI-powered flashcards from your notes</Text>
 
-      {/* Quick Actions */}
-      <View style={styles.quickActions}>
-        <TouchableOpacity
-          style={styles.quickBtn}
-          onPress={() => router.push("/my-sets" as any)}
-        >
-          <Text style={styles.quickBtnIcon}></Text>
-          <Text style={styles.quickBtnText}>My Sets</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickBtn}
-          onPress={() => router.push("/settings" as any)}
-        >
-          <Text style={styles.quickBtnIcon}></Text>
-          <Text style={styles.quickBtnText}>Settings</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Settings shortcut */}
+      <TouchableOpacity style={styles.settingsBtn} onPress={() => router.push("/settings" as any)}>
+        <Text style={styles.settingsBtnText}>⚙️ Settings</Text>
+      </TouchableOpacity>
 
-      {/* Input */}
+      {/* Create card */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Create Flashcards</Text>
-        <Text style={styles.sectionSubtitle}>
-          Type or paste your vocab terms and our AI will generate cards
-        </Text>
-        <TextInput
-          style={styles.input}
-          placeholder={"Example:\nPhotosynthesis: process plants use to make food\nMitochondria: powerhouse of the cell"}
-          multiline
-          value={text}
-          onChangeText={setText}
-        />
+
+        {/* Mode selector */}
+        <View style={styles.modeRow}>
+          {MODES.map(({ key, label, icon }) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.modeBtn, mode === key && styles.modeBtnActive]}
+              onPress={() => setMode(key)}
+            >
+              <Text style={styles.modeBtnIcon}>{icon}</Text>
+              <Text style={[styles.modeBtnText, mode === key && styles.modeBtnTextActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Type input */}
+        {mode === "type" && (
+          <TextInput
+            style={styles.input}
+            placeholder={
+              "Paste your notes or type terms here.\n\nExamples:\n• Mitochondria: powerhouse of the cell\n• Photosynthesis: plants converting light to energy\n\nWorks with bullet lists, paragraphs, or raw vocab."
+            }
+            multiline
+            value={text}
+            onChangeText={setText}
+            textAlignVertical="top"
+          />
+        )}
+
+        {/* PDF info */}
+        {mode === "pdf" && (
+          <View style={styles.uploadInfo}>
+            <Text style={styles.uploadInfoIcon}>📄</Text>
+            <Text style={styles.uploadInfoTitle}>Upload a PDF</Text>
+            <Text style={styles.uploadInfoDesc}>
+              Select any PDF — lecture slides, textbook pages, study guides — and Claude will extract the key terms and definitions.
+            </Text>
+          </View>
+        )}
+
+        {/* Image info */}
+        {mode === "image" && (
+          <View style={styles.uploadInfo}>
+            <Text style={styles.uploadInfoIcon}>🖼️</Text>
+            <Text style={styles.uploadInfoTitle}>Upload a Photo</Text>
+            <Text style={styles.uploadInfoDesc}>
+              Take a photo of your handwritten or printed notes. Claude will read and extract flashcards automatically.
+            </Text>
+          </View>
+        )}
+
+        {/* Generate button */}
         <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleManual}
+          style={[styles.generateBtn, loading && styles.btnDisabled]}
+          onPress={handleGenerate}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color="#fff" size="small" />
+              <Text style={[styles.generateBtnText, { marginLeft: 10 }]}>{loadingLabel}</Text>
+            </View>
           ) : (
-            <Text style={styles.buttonText}>Generate Flashcards</Text>
+            <Text style={styles.generateBtnText}>
+              {mode === "type" ? "✨ Generate Flashcards" : mode === "pdf" ? "📄 Choose PDF" : "🖼️ Choose Image"}
+            </Text>
           )}
         </TouchableOpacity>
-
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or upload a file</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <View style={styles.uploadRow}>
-          <TouchableOpacity style={[styles.uploadBtn, loading && styles.buttonDisabled]} onPress={handlePDFUpload} disabled={loading}>
-            <Text style={styles.uploadBtnText}>📄 PDF</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.uploadBtn, loading && styles.buttonDisabled]} onPress={handleImageUpload} disabled={loading}>
-            <Text style={styles.uploadBtnText}>🖼️ Image</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
-      {/* Generated Cards */}
+      {/* Generated cards */}
       {cards.length > 0 && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Generated Cards ({cards.length})</Text>
+          <Text style={styles.sectionTitle}>
+            {cards.length} Cards Generated
+          </Text>
 
-          {/* Save set */}
+          {/* Save row */}
           <View style={styles.saveRow}>
             <TextInput
               style={styles.nameInput}
-              placeholder="Name this set..."
+              placeholder="Name this set to save it..."
               value={setName}
               onChangeText={setSetName}
             />
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveSet}>
+            <TouchableOpacity style={styles.saveBtn} onPress={saveSet}>
               <Text style={styles.saveBtnText}>Save</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Action buttons */}
+          {/* Play buttons */}
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: "#2ecc71", marginBottom: 10 }]}
-            onPress={() => router.push({ pathname: "/game" as any, params: { cards: JSON.stringify(cards) } })}
+            style={[styles.playBtn, { backgroundColor: "#2ecc71" }]}
+            onPress={() =>
+              router.push({ pathname: "/game" as any, params: { cards: JSON.stringify(cards) } })
+            }
           >
-            <Text style={styles.buttonText}>🎮 Start Timed Game</Text>
+            <Text style={styles.playBtnText}>🎮 Start Timed Game</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.playBtn, { backgroundColor: "#3498db", marginBottom: 16 }]}
+            onPress={() =>
+              router.push({ pathname: "/review" as any, params: { cards: JSON.stringify(cards) } })
+            }
+          >
+            <Text style={styles.playBtnText}>📖 Review Mode</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: "#3498db", marginBottom: 20 }]}
-            onPress={() => router.push({ pathname: "/review" as any, params: { cards: JSON.stringify(cards) } })}
-          >
-            <Text style={styles.buttonText}>📖 Review Mode</Text>
-          </TouchableOpacity>
-
-          {/* Cards preview */}
-          {cards.map((card: any, i: number) => (
-            <View key={i} style={styles.flashCard}>
-              <Text style={styles.term}>{card.term}</Text>
-              <Text style={styles.definition}>{card.definition}</Text>
+          {/* Card preview */}
+          {cards.map((c, i) => (
+            <View key={i} style={styles.previewCard}>
+              <Text style={styles.previewTerm}>{c.term}</Text>
+              <Text style={styles.previewDef}>{c.definition}</Text>
             </View>
           ))}
         </View>
       )}
 
-      {/* Getting started */}
-      {cards.length === 0 && !loading && (
+      {/* Onboarding */}
+      {!cards.length && !loading && (
         <View style={[styles.card, { backgroundColor: "#eef6ff" }]}>
-          <Text style={styles.sectionTitle}>Getting Started</Text>
+          <Text style={styles.sectionTitle}>How it works</Text>
           {[
-            ["1", "Create or load a set", "Type terms above or load a saved set"],
-            ["2", "Choose your mode", "Timed game or relaxed review"],
-            ["3", "Study & improve", "Track missed terms and master your material"],
-          ].map(([num, title, desc]) => (
-            <View key={num} style={styles.step}>
-              <View style={styles.stepNum}>
-                <Text style={styles.stepNumText}>{num}</Text>
-              </View>
+            ["✏️", "Add your notes", "Type, paste, upload a PDF, or photo your notes"],
+            ["✨", "AI generates cards", "Claude extracts key terms and definitions for you"],
+            ["🎮", "Study your way", "Timed game with tilt controls, or relaxed review mode"],
+          ].map(([icon, title, desc]) => (
+            <View key={title} style={styles.step}>
+              <Text style={styles.stepIcon}>{icon}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.stepTitle}>{title}</Text>
                 <Text style={styles.stepDesc}>{desc}</Text>
@@ -246,42 +295,57 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, paddingTop: 60, backgroundColor: "#f8f7ff", flexGrow: 1 },
-  title: { fontSize: 32, fontWeight: "bold", textAlign: "center", color: "#6C63FF" },
-  subtitle: { fontSize: 14, color: "#888", textAlign: "center", marginBottom: 24, marginTop: 4 },
 
-  quickActions: { flexDirection: "row", gap: 12, marginBottom: 20 },
-  quickBtn: { flex: 1, backgroundColor: "#fff", borderRadius: 12, padding: 16, alignItems: "center", borderWidth: 1, borderColor: "#e0e0ff" },
-  quickBtnIcon: { fontSize: 24, marginBottom: 4 },
-  quickBtnText: { fontSize: 13, fontWeight: "600", color: "#444" },
+  title: { fontSize: 30, fontWeight: "bold", textAlign: "center", color: "#6C63FF" },
+  subtitle: { fontSize: 13, color: "#999", textAlign: "center", marginTop: 4, marginBottom: 16 },
 
-  card: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#333", marginBottom: 4 },
-  sectionSubtitle: { fontSize: 13, color: "#888", marginBottom: 12 },
+  settingsBtn: { alignSelf: "flex-end", paddingVertical: 6, paddingHorizontal: 12, backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#e0e0ff", marginBottom: 16 },
+  settingsBtnText: { fontSize: 13, color: "#555" },
 
-  input: { borderWidth: 1, borderColor: "#ddd", borderRadius: 10, padding: 12, fontSize: 15, minHeight: 140, marginBottom: 12, textAlignVertical: "top" },
-  button: { backgroundColor: "#6C63FF", padding: 15, borderRadius: 10, alignItems: "center" },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 18, marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#333", marginBottom: 14 },
 
+  // Mode selector
+  modeRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
+  modeBtn: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: "#e0e0e0", backgroundColor: "#fafafa" },
+  modeBtnActive: { borderColor: "#6C63FF", backgroundColor: "#f0eeff" },
+  modeBtnIcon: { fontSize: 20, marginBottom: 2 },
+  modeBtnText: { fontSize: 12, fontWeight: "600", color: "#888" },
+  modeBtnTextActive: { color: "#6C63FF" },
+
+  // Text input
+  input: { borderWidth: 1, borderColor: "#ddd", borderRadius: 10, padding: 14, fontSize: 14, minHeight: 160, marginBottom: 14, lineHeight: 22, color: "#333" },
+
+  // Upload info panels
+  uploadInfo: { alignItems: "center", paddingVertical: 24, paddingHorizontal: 16, marginBottom: 14 },
+  uploadInfoIcon: { fontSize: 48, marginBottom: 10 },
+  uploadInfoTitle: { fontSize: 17, fontWeight: "bold", color: "#333", marginBottom: 6 },
+  uploadInfoDesc: { fontSize: 14, color: "#777", textAlign: "center", lineHeight: 20 },
+
+  // Generate button
+  generateBtn: { backgroundColor: "#6C63FF", padding: 16, borderRadius: 12, alignItems: "center" },
+  btnDisabled: { opacity: 0.6 },
+  generateBtnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  loadingRow: { flexDirection: "row", alignItems: "center" },
+
+  // Save row
   saveRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   nameInput: { flex: 1, borderWidth: 1, borderColor: "#ddd", borderRadius: 10, padding: 10, fontSize: 14 },
   saveBtn: { backgroundColor: "#6C63FF", paddingHorizontal: 16, borderRadius: 10, justifyContent: "center" },
   saveBtnText: { color: "#fff", fontWeight: "bold" },
 
-  dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 14 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "#e0e0e0" },
-  dividerText: { marginHorizontal: 10, fontSize: 12, color: "#aaa" },
-  uploadRow: { flexDirection: "row", gap: 10 },
-  uploadBtn: { flex: 1, borderWidth: 1.5, borderColor: "#6C63FF", borderRadius: 10, padding: 12, alignItems: "center" },
-  uploadBtnText: { color: "#6C63FF", fontWeight: "600", fontSize: 15 },
+  // Play buttons
+  playBtn: { padding: 15, borderRadius: 12, alignItems: "center", marginBottom: 10 },
+  playBtnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 
-  flashCard: { backgroundColor: "#f0eeff", padding: 14, borderRadius: 10, marginBottom: 10 },
-  term: { fontSize: 16, fontWeight: "bold", color: "#6C63FF" },
-  definition: { fontSize: 13, color: "#555", marginTop: 4 },
+  // Card preview
+  previewCard: { backgroundColor: "#f8f7ff", padding: 12, borderRadius: 10, marginBottom: 8 },
+  previewTerm: { fontSize: 15, fontWeight: "bold", color: "#6C63FF" },
+  previewDef: { fontSize: 13, color: "#555", marginTop: 3 },
 
+  // Onboarding steps
   step: { flexDirection: "row", gap: 12, marginBottom: 14, alignItems: "flex-start" },
-  stepNum: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#6C63FF", alignItems: "center", justifyContent: "center" },
-  stepNumText: { color: "#fff", fontWeight: "bold" },
-  stepTitle: { fontSize: 14, fontWeight: "600", color: "#333" },
-  stepDesc: { fontSize: 12, color: "#888", marginTop: 2 },
+  stepIcon: { fontSize: 22, width: 32, textAlign: "center" },
+  stepTitle: { fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 2 },
+  stepDesc: { fontSize: 13, color: "#888", lineHeight: 18 },
 });
