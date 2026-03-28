@@ -246,7 +246,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={[styles.playBtn, { backgroundColor: "#2ecc71" }]}
             onPress={() =>
-              router.push({ pathname: "/game" as any, params: { cards: JSON.stringify(cards) } })
+              router.push({ pathname: "/heads-up" as any, params: { cards: JSON.stringify(cards) } })
             }
           >
             <Text style={styles.playBtnText}>🎮 Start Timed Game</Text>

@@ -131,7 +131,7 @@ export default function MySetsScreen() {
                   style={[styles.actionBtn, { backgroundColor: "#2ecc71" }]}
                   onPress={() =>
                     router.push({
-                      pathname: "/game" as any,
+                      pathname: "/heads-up" as any,
                       params: { cards: JSON.stringify(set.cards) },
                     })
                   }

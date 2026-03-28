@@ -1,5 +1,7 @@
-import anthropic
+import json
 import os
+
+import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,17 +46,10 @@ def generate_cards(text: str) -> list:
             ],
         )
 
-    import json
-    result = message.content[0].text
-    # strip any markdown code blocks if claude wraps it
-    result = result.strip()
+    result = message.content[0].text.strip()
     if result.startswith("```"):
         result = result.split("```")[1]
         if result.startswith("json"):
             result = result[4:]
-    result = result.strip()
-    print("CLAUDE RETURNED:", result)
-    print("CLAUDE RETURNED:", repr(result)) 
-    cards = json.loads(result)
-    return cards
-
+        result = result.strip()
+    return json.loads(result)

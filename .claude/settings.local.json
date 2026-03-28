@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx expo:*)",
+      "Bash(cp \"C:/Users/misti/backend/client/app/heads-up.tsx\" \"C:/Users/misti/backend/client/app/game.tsx\")",
+      "Bash(git -C \"C:/Users/misti/backend\" rm client/app/heads-up.tsx)"
+    ]
+  }
+}
