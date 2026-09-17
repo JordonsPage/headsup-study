@@ -1,3 +1,4 @@
+<img width="2956" height="8234" alt="diagram" src="https://github.com/user-attachments/assets/65c86ad3-36be-4c0e-a9f5-4c460e7075b9" />
 ﻿# headsup-study
 
 Soon to be series of multiple party games centered around studying
