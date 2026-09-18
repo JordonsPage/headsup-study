@@ -5,12 +5,12 @@ A mobile study app that turns your notes into a party game. Upload vocab terms �
 
 ## Features
 
-- **AI flashcard generation** — paste text, snap a photo of notes, or upload a PDF (typed or scanned) and the backend extracts terms and definitions automatically via the Anthropic API
-- **Heads-up game mode** — tilt your phone forward to pass, tilt back to mark a card correct, all against a countdown timer
-- **Review mode** — untimed flip-card review with "got it" / "still learning" tracking, and a "review missed" loop to drill weak spots
-- **Saved sets** — flashcard sets persist locally so you can replay or review them later
-- **Configurable settings** — adjustable timer length and cards-per-round
-- **Cross-platform** — built with Expo, so it runs on iOS, Android, and web from one codebase
+- **AI flashcard generation** - paste text, snap a photo of notes, or upload a PDF (typed or scanned) and the backend extracts terms and definitions automatically via the Anthropic API
+- **Heads-up game mode** - tilt your phone forward to pass, tilt back to mark a card correct, all against a countdown timer
+- **Review mode** - untimed flip-card review with "got it" / "still learning" tracking, and a "review missed" loop to drill weak spots
+- **Saved sets** - flashcard sets persist locally so you can replay or review them later
+- **Configurable settings** - adjustable timer length and cards-per-round
+- **Cross-platform** - built with Expo, so it runs on iOS, Android, and web from one codebase
 
 ## Tech Stack
 
