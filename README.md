@@ -1,7 +1,7 @@
 [README.md](https://github.com/user-attachments/files/32345146/README.md)
 # headsup-study
 
-A mobile study app that turns your notes into a party game. Upload vocab terms — as text, a photo, or a PDF — and it will auto-generates flashcards you can quiz yourself on solo or play "Heads Up!" style with tilt controls. First entry in a planned series of study-focused party games.
+A mobile study app that turns your notes into a party game. Upload vocab terms - as text, a photo, or a PDF - and it will auto-generates flashcards you can quiz yourself on solo or play "Heads Up!" style with tilt controls. First entry in a planned series of study-focused party games.
 
 ## Features
 
