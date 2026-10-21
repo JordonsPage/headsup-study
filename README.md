@@ -2,6 +2,14 @@
 
 Turn class notes into a clue-giving party game, or practice on your own. Built with Expo / React Native and a FastAPI + Anthropic generation service.
 
+## Preview
+
+Actual screenshots of the Expo web build:
+
+| Create and play | Round results |
+|---|---|
+| <img src="docs/home.png" alt="Heads Up Study home screen with a bright blue and yellow starter-round card" width="300"> | <img src="docs/results.png" alt="Round results showing points and passed cards" width="300"> |
+
 ## Play
 
 - **Create & play:** paste notes, choose a PDF, or upload a photo to generate flashcards. Name and save the deck on your device.
