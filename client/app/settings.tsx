@@ -1,157 +1,118 @@
-import React, { useState, useEffect } from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  Alert,
-} from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { useEffect, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-
-const SETTINGS_KEY = "headsup_settings";
-
-const DEFAULT_SETTINGS = {
-  timerDuration: 60,
-  numberOfCards: 0,
-};
-
-const TIMER_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 300];
-const CARD_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 50];
-
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  Button,
+  Heading,
+  Page,
+  Panel,
+  palette,
+  ui,
+} from "@/components/play-ui";
+import {
+  CARD_OPTIONS,
+  DEFAULT_SETTINGS,
+  readSettings,
+  SETTINGS_KEY,
+  TIMER_OPTIONS,
+} from "@/lib/cards";
+const formatTimer = (seconds: number) =>
+  seconds < 60
+    ? `${seconds}s`
+    : `${Math.floor(seconds / 60)}m${seconds % 60 ? ` ${seconds % 60}s` : ""}`;
 export default function SettingsScreen() {
-  const [timerDuration, setTimerDuration] = useState(60);
-  const [numberOfCards, setNumberOfCards] = useState(0);
   const router = useRouter();
-
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [ready, setReady] = useState(false);
+  const [notice, setNotice] = useState("");
   useEffect(() => {
-    loadSettings();
+    AsyncStorage.getItem(SETTINGS_KEY)
+      .then((raw) => setSettings(readSettings(raw ? JSON.parse(raw) : null)))
+      .catch(() => setNotice("Using the default settings."))
+      .finally(() => setReady(true));
   }, []);
-
-  async function loadSettings() {
+  async function save() {
     try {
-      const data = await AsyncStorage.getItem(SETTINGS_KEY);
-      if (data) {
-        const settings = JSON.parse(data);
-        setTimerDuration(settings.timerDuration ?? 60);
-        setNumberOfCards(settings.numberOfCards ?? 0);
-      }
-    } catch (e) {
-      console.error("Failed to load settings", e);
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      setNotice("Saved! Your next round is ready.");
+    } catch {
+      setNotice("Could not save. Please try again.");
     }
   }
-
-  async function handleSave() {
-    try {
-      await AsyncStorage.setItem(
-        SETTINGS_KEY,
-        JSON.stringify({ timerDuration, numberOfCards })
-      );
-      Alert.alert("Saved!", "Your settings have been saved.");
-    } catch (e) {
-      Alert.alert("Error", "Could not save settings.");
-    }
-  }
-
-  function formatTimer(seconds: number) {
-    if (seconds < 60) return `${seconds}s`;
-    return `${seconds / 60}m`;
-  }
-
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backBtn}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Settings</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
-      {/* Timer Duration */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>⏱ Timer Duration</Text>
-        <Text style={styles.sectionSubtitle}>
-          How long you have to get through all cards
+    <Page>
+      <Button
+        label="Back to the club"
+        tone="light"
+        icon="arrow-back"
+        onPress={() => router.back()}
+      />
+      <Heading
+        eyebrow="YOUR GAME, YOUR RULES"
+        title="Set the pace."
+        subtitle="Quick warm-up or a full class challenge? You choose."
+      />
+      {(
+        [
+          {
+            key: "timerDuration",
+            title: "Beat the clock",
+            desc: "Time for each game round.",
+            options: TIMER_OPTIONS,
+            label: formatTimer,
+          },
+          {
+            key: "numberOfCards",
+            title: "Pick your deck size",
+            desc: "Limit the cards in a timed round. Practice uses the whole deck.",
+            options: CARD_OPTIONS,
+            label: (n: number) => (n === 0 ? "All cards" : `${n} cards`),
+          },
+        ] as const
+      ).map((group) => (
+        <Panel key={group.key}>
+          <Text style={ui.section}>{group.title}</Text>
+          <Text style={[ui.body, { marginBottom: 18 }]}>{group.desc}</Text>
+          <View style={[ui.row, { flexWrap: "wrap" }]}>
+            {group.options.map((value) => (
+              <Pressable
+                key={value}
+                disabled={!ready}
+                accessibilityRole="button"
+                accessibilityState={{
+                  selected: settings[group.key] === value,
+                  disabled: !ready,
+                }}
+                onPress={() =>
+                  setSettings((s) => ({ ...s, [group.key]: value }))
+                }
+                style={[ui.chip, settings[group.key] === value && ui.selected]}
+              >
+                <Text style={ui.chipText}>{group.label(value)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Panel>
+      ))}
+      <Panel color={palette.yellow}>
+        <Text style={ui.section}>No rush? No problem.</Text>
+        <Text style={ui.body}>
+          Practice mode has no timer. Flip each card, check your answer, and
+          revisit the ones you’re still learning.
         </Text>
-        <Text style={styles.currentValue}>{formatTimer(timerDuration)}</Text>
-        <View style={styles.optionsGrid}>
-          {TIMER_OPTIONS.map((val) => (
-            <TouchableOpacity
-              key={val}
-              style={[styles.optionBtn, timerDuration === val && styles.optionBtnSelected]}
-              onPress={() => setTimerDuration(val)}
-            >
-              <Text style={[styles.optionText, timerDuration === val && styles.optionTextSelected]}>
-                {formatTimer(val)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Number of Cards */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>🃏 Number of Cards</Text>
-        <Text style={styles.sectionSubtitle}>
-          Limit how many cards per game (0 = use all)
+      </Panel>
+      <Button
+        label="Save my settings"
+        icon="checkmark"
+        disabled={!ready}
+        onPress={save}
+      />
+      {!!notice && (
+        <Text accessibilityLiveRegion="polite" style={ui.body}>
+          {notice}
         </Text>
-        <Text style={styles.currentValue}>
-          {numberOfCards === 0 ? "All" : numberOfCards}
-        </Text>
-        <View style={styles.optionsGrid}>
-          {CARD_OPTIONS.map((val) => (
-            <TouchableOpacity
-              key={val}
-              style={[styles.optionBtn, numberOfCards === val && styles.optionBtnSelected]}
-              onPress={() => setNumberOfCards(val)}
-            >
-              <Text style={[styles.optionText, numberOfCards === val && styles.optionTextSelected]}>
-                {val === 0 ? "All" : val}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Info */}
-      <View style={[styles.card, { backgroundColor: "#eef6ff" }]}>
-        <Text style={styles.sectionTitle}>ℹ️ About Game Mode</Text>
-        <Text style={styles.infoText}>• <Text style={{ fontWeight: "600" }}>Timer Duration:</Text> Total time to get through all cards</Text>
-        <Text style={styles.infoText}>• <Text style={{ fontWeight: "600" }}>Card Limit:</Text> Useful for quick practice sessions</Text>
-        <Text style={styles.infoText}>• <Text style={{ fontWeight: "600" }}>Review Mode:</Text> No timer — go at your own pace</Text>
-      </View>
-
-      {/* Save */}
-      <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-        <Text style={styles.saveBtnText}>💾 Save Settings</Text>
-      </TouchableOpacity>
-    </ScrollView>
+      )}
+    </Page>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { padding: 20, paddingTop: 60, backgroundColor: "#f8f7ff", flexGrow: 1 },
-
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 24 },
-  backBtn: { fontSize: 16, color: "#6C63FF", fontWeight: "600", width: 60 },
-  title: { fontSize: 22, fontWeight: "bold", color: "#333" },
-
-  card: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  sectionTitle: { fontSize: 17, fontWeight: "bold", color: "#333", marginBottom: 4 },
-  sectionSubtitle: { fontSize: 13, color: "#888", marginBottom: 12 },
-  currentValue: { fontSize: 36, fontWeight: "bold", color: "#6C63FF", textAlign: "center", marginBottom: 16 },
-
-  optionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  optionBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1.5, borderColor: "#ddd", backgroundColor: "#fafafa" },
-  optionBtnSelected: { borderColor: "#6C63FF", backgroundColor: "#6C63FF" },
-  optionText: { fontSize: 15, fontWeight: "600", color: "#555" },
-  optionTextSelected: { color: "#fff" },
-
-  infoText: { fontSize: 13, color: "#555", marginBottom: 6 },
-
-  saveBtn: { backgroundColor: "#6C63FF", padding: 16, borderRadius: 12, alignItems: "center", marginBottom: 40 },
-  saveBtnText: { color: "#fff", fontSize: 17, fontWeight: "bold" },
-});
