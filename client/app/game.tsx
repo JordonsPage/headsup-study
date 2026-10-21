@@ -1,218 +1,277 @@
-import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { Accelerometer } from "expo-sensors";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
+import { Accelerometer } from "expo-sensors";
+import { Button, DeckArt, Icon, Pop, palette, ui } from "@/components/play-ui";
 import { useCardGame } from "@/hooks/use-card-game";
-
-const TILT_THRESHOLD = 0.5;
-
 export default function GameScreen() {
-  const router = useRouter();
   const game = useCardGame();
-
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const router = useRouter();
+  const { answer, finish } = game;
+  const [started, setStarted] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [feedback, setFeedback] = useState<"correct" | "pass" | null>(null);
-
-  // Prevents double-tap and accelerometer double-fire
-  const actionPending = useRef(false);
-  // Mirror timeLeft for timer callback (avoids stale closure)
-  const timeLeftRef = useRef<number>(0);
-
-  // Start timer once cards are ready
+  const [sensor, setSensor] = useState(false);
+  const deadline = useRef(0);
+  const pending = useRef(false);
+  const armed = useRef(false);
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    },
+    [],
+  );
+  const handleAction = useCallback(
+    (action: "correct" | "pass") => {
+      if (pending.current || !started || Date.now() >= deadline.current) return;
+      pending.current = true;
+      armed.current = false;
+      setFeedback(action);
+      const done = answer(action);
+      feedbackTimer.current = setTimeout(() => {
+        setFeedback(null);
+        if (done) finish();
+        else pending.current = false;
+      }, 500);
+    },
+    [started, answer, finish],
+  );
   useEffect(() => {
-    if (!game.ready) return;
-    setTimeLeft(game.settings.timerDuration);
-    timeLeftRef.current = game.settings.timerDuration;
-  }, [game.ready]);
-
-  // Countdown — runs independently from card navigation
-  useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0) return;
-    const t = setTimeout(() => {
-      const next = timeLeft - 1;
-      timeLeftRef.current = next;
-      setTimeLeft(next);
-      if (next <= 0) {
-        game.finish();
+    if (!started) return;
+    const tick = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((deadline.current - Date.now()) / 1000),
+      );
+      setTimeLeft(remaining);
+      if (!remaining) {
+        pending.current = true;
+        finish();
       }
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [timeLeft]);
-
-  // Accelerometer — only reads refs, never stale
+    };
+    tick();
+    const timer = setInterval(tick, 200);
+    return () => clearInterval(timer);
+  }, [started, finish]);
   useEffect(() => {
-    if (!game.ready) return;
-    Accelerometer.setUpdateInterval(300);
-    const sub = Accelerometer.addListener(({ z }) => {
-      if (actionPending.current) return;
-      if (z < -TILT_THRESHOLD) handleAction("correct");
-      else if (z > TILT_THRESHOLD) handleAction("pass");
-    });
-    return () => sub.remove();
-  }, [game.ready]);
-
-  function handleAction(action: "correct" | "pass") {
-    if (actionPending.current || !game.currentCard) return;
-    actionPending.current = true;
-
-    // Show feedback flash
-    setFeedback(action);
-
-    // Record the answer in the game engine
-    const done = game.answer(action);
-
-    setTimeout(() => {
-      setFeedback(null);
-      actionPending.current = false;
-      if (done) {
-        game.finish();
-      }
-    }, 600);
-  }
-
-  if (!game.ready || !game.currentCard) return null;
-
-  const timerWarning = timeLeft !== null && timeLeft <= 10;
-
-  return (
-    <View
-      style={[
-        styles.container,
-        feedback === "correct"
-          ? styles.bgCorrect
-          : feedback === "pass"
-          ? styles.bgPass
-          : styles.bgDefault,
-      ]}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace("/")}>
-          <Text style={styles.exitBtn}>✕ Exit</Text>
-        </TouchableOpacity>
-        <Text style={[styles.timer, timerWarning && styles.timerWarning]}>
-          {timeLeft ?? "--"}s
-        </Text>
-        <Text style={styles.scoreBadge}>
-          {game.score}/{game.totalCards}
-        </Text>
-      </View>
-
-      {/* Progress bar */}
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: `${game.progress}%` }]} />
-      </View>
-
-      {/* Card */}
-      <View style={styles.cardArea}>
-        <Text style={styles.cardCounter}>
-          Card {game.index + 1} of {game.totalCards}
-        </Text>
-        <Text style={styles.term}>{game.currentCard.term}</Text>
-        <Text style={styles.definition}>{game.currentCard.definition}</Text>
-        {feedback && (
-          <Text style={styles.feedbackText}>
-            {feedback === "correct" ? "✓ Got it!" : "✗ Pass"}
+    if (!started) return;
+    let active = true;
+    let subscription: ReturnType<typeof Accelerometer.addListener> | undefined;
+    Accelerometer.isAvailableAsync()
+      .then((available) => {
+        if (!active || !available) return;
+        setSensor(true);
+        Accelerometer.setUpdateInterval(100);
+        subscription = Accelerometer.addListener(({ z }) => {
+          if (Math.abs(z) < 0.25) {
+            armed.current = true;
+            return;
+          }
+          if (!armed.current || pending.current) return;
+          if (z < -0.65) handleAction("correct");
+          else if (z > 0.65) handleAction("pass");
+        });
+      })
+      .catch(() => {
+        if (active) setSensor(false);
+      });
+    return () => {
+      active = false;
+      subscription?.remove();
+    };
+  }, [started, handleAction]);
+  if (!game.ready)
+    return (
+      <SafeAreaView style={styles.loading}>
+        <ActivityIndicator color={palette.blue} />
+        <Text style={ui.body}>Shuffling your deck…</Text>
+      </SafeAreaView>
+    );
+  if (!started)
+    return (
+      <SafeAreaView style={styles.ready}>
+        <View style={styles.width}>
+          <DeckArt />
+          <Text style={[ui.eyebrow, { textAlign: "center" }]}>
+            GATHER YOUR CLUE CREW
           </Text>
-        )}
+          <Text style={[ui.title, { textAlign: "center" }]}>
+            Ready, set,{"\n"}heads up!
+          </Text>
+          <Text style={[ui.body, { textAlign: "center", marginBottom: 28 }]}>
+            {game.totalCards} cards. {game.settings.timerDuration} seconds. Hold
+            the screen toward your friends so they can give clues. You guess the
+            term! Tilt back for “Got it,” forward to pass, then return upright.
+          </Text>
+          <Button
+            label="Let’s play!"
+            icon="play"
+            tone="yellow"
+            onPress={() => {
+              deadline.current =
+                Date.now() + game.settings.timerDuration * 1000;
+              setTimeLeft(game.settings.timerDuration);
+              setStarted(true);
+            }}
+          />
+          <Button
+            label="Back to decks"
+            tone="light"
+            onPress={() => router.back()}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  const backgroundColor =
+    feedback === "correct"
+      ? palette.green
+      : feedback === "pass"
+        ? "#C33D3D"
+        : palette.blue;
+  return (
+    <SafeAreaView style={[styles.game, { backgroundColor }]}>
+      <StatusBar style="light" />
+      <View style={styles.width}>
+        <View style={[ui.row, { justifyContent: "space-between" }]}>
+          <Button
+            label="Exit"
+            tone="light"
+            onPress={() => router.replace("/")}
+          />
+          <View
+            style={[
+              styles.clock,
+              timeLeft <= 10 && { backgroundColor: palette.yellow },
+            ]}
+          >
+            <Icon name="timer-outline" color={palette.ink} />
+            <Text
+              accessibilityLiveRegion={timeLeft <= 5 ? "polite" : "none"}
+              style={styles.clockText}
+            >
+              {timeLeft}s
+            </Text>
+          </View>
+          <Text style={styles.score}>{game.score} pts</Text>
+        </View>
+        <View style={styles.track}>
+          <View style={[styles.fill, { width: `${game.progress}%` }]} />
+        </View>
+        <Pop trigger={`${game.index}-${feedback}`} style={styles.playCard}>
+          <Text style={ui.eyebrow}>
+            {feedback
+              ? "NICE TEAMWORK"
+              : `CARD ${Math.min(game.index + 1, game.totalCards)} / ${game.totalCards}`}
+          </Text>
+          <Text style={styles.term}>
+            {feedback
+              ? feedback === "correct"
+                ? "Got it!"
+                : "Next one!"
+              : game.currentCard?.term}
+          </Text>
+          <Text style={[ui.body, { textAlign: "center" }]}>
+            {feedback
+              ? "Keep the clues coming."
+              : "Clue crew: describe it without saying the word."}
+          </Text>
+        </Pop>
+        <View style={ui.row}>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="Pass"
+              icon="play-skip-forward"
+              tone="coral"
+              disabled={!!feedback}
+              onPress={() => handleAction("pass")}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="Got it!"
+              icon="checkmark"
+              tone="yellow"
+              disabled={!!feedback}
+              onPress={() => handleAction("correct")}
+            />
+          </View>
+        </View>
+        <Text style={styles.hint}>
+          {sensor
+            ? "Tilt back: got it / Tilt forward: pass / Return upright between cards"
+            : "Tap the buttons to play on this device."}
+        </Text>
       </View>
-
-      {/* Buttons */}
-      <View style={styles.buttons}>
-        <TouchableOpacity
-          style={styles.passBtn}
-          onPress={() => handleAction("pass")}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.btnText}>✗ Pass</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.gotBtn}
-          onPress={() => handleAction("correct")}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.btnText}>✓ Got it</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.hint}>Tilt forward = pass · Tilt back = got it</Text>
-    </View>
+    </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20 },
-  bgDefault: { backgroundColor: "#6C63FF" },
-  bgCorrect: { backgroundColor: "#2ecc71" },
-  bgPass: { backgroundColor: "#e74c3c" },
-
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  loading: {
+    flex: 1,
     alignItems: "center",
-    marginBottom: 12,
+    justifyContent: "center",
+    backgroundColor: palette.cream,
   },
-  exitBtn: { color: "rgba(255,255,255,0.8)", fontSize: 15, fontWeight: "600" },
-  timer: { fontSize: 28, fontWeight: "bold", color: "#fff" },
-  timerWarning: { color: "#ffe066" },
-  scoreBadge: { fontSize: 16, color: "#fff" },
-
-  progressBar: {
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.3)",
-    borderRadius: 2,
-    marginBottom: 32,
+  ready: {
+    flex: 1,
+    backgroundColor: palette.cream,
+    padding: 24,
+    justifyContent: "center",
   },
-  progressFill: { height: 4, backgroundColor: "#fff", borderRadius: 2 },
-
-  cardArea: { flex: 1, alignItems: "center", justifyContent: "center" },
-  cardCounter: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 13,
-    marginBottom: 20,
-    textTransform: "uppercase",
-    letterSpacing: 1,
+  game: { flex: 1, padding: 20 },
+  width: {
+    width: "100%",
+    maxWidth: 900,
+    alignSelf: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  clock: {
+    backgroundColor: "#FFF",
+    borderRadius: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  clockText: { color: palette.ink, fontSize: 25, fontWeight: "900" },
+  score: { color: "#FFF", fontSize: 18, fontWeight: "800" },
+  track: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#FFFFFF40",
+    marginTop: 12,
+  },
+  fill: { height: 8, borderRadius: 4, backgroundColor: palette.yellow },
+  playCard: {
+    flex: 1,
+    minHeight: 180,
+    marginVertical: 24,
+    backgroundColor: "#FFF",
+    borderRadius: 30,
+    borderWidth: 3,
+    borderBottomWidth: 8,
+    borderColor: palette.ink,
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
   },
   term: {
-    fontSize: 44,
-    fontWeight: "bold",
-    color: "#fff",
+    fontSize: 40,
+    lineHeight: 46,
+    fontWeight: "900",
+    color: palette.ink,
     textAlign: "center",
-    marginBottom: 16,
   },
-  definition: {
-    fontSize: 18,
-    color: "rgba(255,255,255,0.85)",
-    textAlign: "center",
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  feedbackText: { fontSize: 32, color: "#fff", fontWeight: "bold" },
-
-  buttons: { flexDirection: "row", gap: 16, marginBottom: 14 },
-  passBtn: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.25)",
-    padding: 20,
-    borderRadius: 16,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.3)",
-  },
-  gotBtn: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    padding: 20,
-    borderRadius: 16,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.5)",
-  },
-  btnText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
   hint: {
-    textAlign: "center",
-    color: "rgba(255,255,255,0.45)",
+    color: "#FFF",
     fontSize: 12,
-    marginBottom: 4,
+    textAlign: "center",
+    lineHeight: 18,
+    marginTop: 8,
   },
 });

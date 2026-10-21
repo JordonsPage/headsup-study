@@ -1,34 +1,37 @@
-
-import { Tabs } from 'expo-router';
-import * as React from "react";
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
+import React from "react";
+import { Tabs } from "expo-router";
+import { Icon, palette } from "@/components/play-ui";
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        tabBarActiveTintColor: palette.blue,
+        tabBarInactiveTintColor: palette.muted,
+        tabBarStyle: {
+          backgroundColor: "#FFF",
+          borderTopWidth: 2,
+          borderTopColor: palette.ink,
+        },
+        tabBarLabelStyle: { fontWeight: "800", fontSize: 12 },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: "Create & play",
+          tabBarIcon: ({ color }) => (
+            <Icon name="flash-outline" color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'My Sets',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="bookmark.fill" color={color} />,
+          title: "My decks",
+          tabBarIcon: ({ color }) => (
+            <Icon name="albums-outline" color={color} />
+          ),
         }}
       />
     </Tabs>

@@ -12,18 +12,18 @@ def _encode_image(image: Image.Image) -> str:
     """Resize and JPEG-compress image until under MAX_IMAGE_BYTES, return base64."""
     image = image.convert("RGB")
     quality = 85
-    scale = 1.0
     while True:
-        w, h = image.size
-        resized = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS) if scale < 1.0 else image
         buffer = io.BytesIO()
-        resized.save(buffer, format="JPEG", quality=quality)
-        if buffer.tell() <= MAX_IMAGE_BYTES or quality <= 30:
+        image.save(buffer, format="JPEG", quality=quality)
+        if buffer.tell() <= MAX_IMAGE_BYTES:
             break
-        quality -= 15
-        if quality < 30:
-            quality = 30
-            scale *= 0.75
+        if quality > 30:
+            quality = max(30, quality - 15)
+        else:
+            w, h = image.size
+            if w == 1 and h == 1:
+                raise ValueError("Could not compress image")
+            image = image.resize((max(1, int(w * 0.75)), max(1, int(h * 0.75))), Image.Resampling.LANCZOS)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
@@ -31,8 +31,10 @@ def _pdf_to_images(contents: bytes) -> str:
     """Render each PDF page as an image and encode the first page with content."""
     try:
         import fitz  # PyMuPDF
-        doc = fitz.open(stream=contents, filetype="pdf")
-        for page in doc:
+        with fitz.open(stream=contents, filetype="pdf") as doc:
+            if not len(doc):
+                return ""
+            page = doc[0]
             mat = fitz.Matrix(2, 2)  # 2x zoom for readability
             pix = page.get_pixmap(matrix=mat)
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
@@ -50,7 +52,7 @@ def extract_text(filename: str, contents: bytes) -> str:
         text = ""
         with pdfplumber.open(io.BytesIO(contents)) as pdf:
             for page in pdf.pages:
-                text += page.extract_text() or ""
+                text += (page.extract_text() or "") + "\n"
         if text.strip():
             return text
         # Scanned PDF — fall back to rendering as image
